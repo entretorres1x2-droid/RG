@@ -54,30 +54,23 @@ function doRunRentables({ textReales, textLae, umbral }) {
     // Pre-calculate logs
     const logR = precalcLogs(mR);
     const logA = precalcLogs(mA);
-    currentLogRMatrix = logR; // Store for sorting
+    // SAFETY LIMIT for Mobile Memory (Strict)
+    let MAX_STORED = 150000;
 
-    // SAFETY LIMIT for Mobile Memory (approx 3MB raw + overhead)
-    let MAX_STORED = 300000;
-
-    // We don't know the exact size yet, but we can't over-allocate too much.
-    // We'll use a dynamic approach or a large fixed Buffer if possible.
-    // A Uint32Array(300,000) is tiny.
-    let capacity = 300000;
+    let capacity = 150000;
     if (capacity > MAX_STORED) capacity = MAX_STORED;
 
     indicesRentables = new Uint32Array(capacity);
     ratiosRentables = new Float32Array(capacity);
+    let logRentables = new Float32Array(capacity); // Cache LogR for fast sort
     countRentables = 0;
 
     const batchSize = 160000;
 
     // Loop
     for (let i = 0; i < MAX_COMB; i++) {
-        // If we hit the safety limit, we stop collecting to safe memory
-        // Ideally we would warn the user.
+        // Strict limit stop
         if (countRentables >= MAX_STORED) {
-            // We can't store more. We break early to save the user's browser.
-            // We will send a special "limit reached" status later.
             break;
         }
 
@@ -96,11 +89,12 @@ function doRunRentables({ textReales, textLae, umbral }) {
         if (ratio >= umbral) {
             indicesRentables[countRentables] = i;
             ratiosRentables[countRentables] = ratio;
+            logRentables[countRentables] = lR;
             countRentables++;
         }
 
         if (i % batchSize === 0) {
-            self.postMessage({ type: 'PROGRESS', percent: (i / MAX_COMB * 100).toFixed(0), status: `Generando... (Max 300k)` });
+            self.postMessage({ type: 'PROGRESS', percent: (i / MAX_COMB * 100).toFixed(0), status: `Generando... (Límite 150k)` });
         }
     }
 
@@ -108,32 +102,37 @@ function doRunRentables({ textReales, textLae, umbral }) {
     self.postMessage({ type: 'PROGRESS', percent: 100, status: 'Ordenando...' });
 
     // Sorting by Probability Real (LogR). 
-    // We need to recreate probabilities for sorting.
     // Optimization: Create a Sort Index array.
     let sortIndices = new Uint32Array(countRentables);
     for (let i = 0; i < countRentables; i++) sortIndices[i] = i;
 
-    // Custom sort
+    // Custom sort using PRE-CALCULATED LogR (Super fast)
     sortIndices.sort((a, b) => {
-        const probA = calcLogR(indicesRentables[a], currentLogRMatrix);
-        const probB = calcLogR(indicesRentables[b], currentLogRMatrix);
-        return probB - probA; // DESC
+        return logRentables[b] - logRentables[a]; // DESC
     });
 
     // Reorder our arrays based on sortIndices
     let finalIndices = new Uint32Array(countRentables);
     let finalRatios = new Float32Array(countRentables);
+    // Note: We don't strictly need to reorder logRentables if we don't use it later,
+    // but checking doRunReduccion uses calcLogR... 
+    // Actually doRunReduccion uses calcLogR for final output.
+    // It's better to keep it synced or just recalculate at the end for the few selected items.
+
     for (let i = 0; i < countRentables; i++) {
         finalIndices[i] = indicesRentables[sortIndices[i]];
         finalRatios[i] = ratiosRentables[sortIndices[i]];
     }
     indicesRentables = finalIndices;
     ratiosRentables = finalRatios;
+    // logRentables is discarded to free memory, as it's only for sort?
+    logRentables = null;
 
     self.postMessage({ type: 'RENTABLES_DONE', count: countRentables });
 }
 
 function calcLogR(combIndex, logMatrix) {
+    // Legacy helper kept for Reduction if needed
     let t = combIndex;
     let sum = 0;
     for (let j = FILAS - 1; j >= 0; j--) {
