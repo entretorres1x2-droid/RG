@@ -496,10 +496,13 @@
             el('btnFilter').disabled = true;
 
             // TypedArray Storage
-            let capacity = 500000;
+            // SAFETY LIMIT: 300k
+            const MAX_STORED = 300000;
+            let capacity = MAX_STORED;
             indicesRentables = new Uint32Array(capacity);
             ratiosRentables = new Float32Array(capacity);
             countRentables = 0;
+            let limitReached = false;
 
             // Log precalc
             const lR = mR.map(row => row.map(x => Math.log(x)));
@@ -510,6 +513,11 @@
             const batch = 100000;
 
             for (let i = 0; i < MAX_COMB; i++) {
+                if (countRentables >= MAX_STORED) {
+                    limitReached = true;
+                    break;
+                }
+
                 // Async break to keep UI alive
                 if (i % batch === 0) {
                     updateProgress((i / MAX_COMB * 100).toFixed(0), `Generando... (${countRentables})`);
@@ -527,13 +535,6 @@
 
                 const ratio = Math.exp(logR - logA);
                 if (ratio >= umbral) {
-                    if (countRentables >= capacity) {
-                        capacity *= 2;
-                        let newI = new Uint32Array(capacity);
-                        let newR = new Float32Array(capacity);
-                        newI.set(indicesRentables); newR.set(ratiosRentables);
-                        indicesRentables = newI; ratiosRentables = newR;
-                    }
                     indicesRentables[countRentables] = i;
                     ratiosRentables[countRentables] = ratio;
                     countRentables++;
@@ -566,7 +567,12 @@
             el('btnCalculate').disabled = false;
             el('btnFilter').disabled = false;
             updateProgress(100, `Base generada: ${countRentables}`);
-            alert(`Generadas ${countRentables} columnas.`);
+
+            if (limitReached) {
+                alert(`⚠️ Límite de seguridad alcanzado (300.000).\nSe han generado las primeras 300k. Si necesitas más precisión, sube la Rentabilidad.`);
+            } else {
+                alert(`Generadas ${countRentables} columnas.`);
+            }
         }
 
         function calcProbReal(idx) {

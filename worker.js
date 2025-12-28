@@ -56,17 +56,31 @@ function doRunRentables({ textReales, textLae, umbral }) {
     const logA = precalcLogs(mA);
     currentLogRMatrix = logR; // Store for sorting
 
+    // SAFETY LIMIT for Mobile Memory (approx 3MB raw + overhead)
+    let MAX_STORED = 300000;
+
     // We don't know the exact size yet, but we can't over-allocate too much.
     // We'll use a dynamic approach or a large fixed Buffer if possible.
-    // A Uint32Array(2,000,000) takes 8MB. Let's start with 1,000,000 and expand if needed.
-    let capacity = 1000000;
+    // A Uint32Array(300,000) is tiny.
+    let capacity = 300000;
+    if (capacity > MAX_STORED) capacity = MAX_STORED;
+
     indicesRentables = new Uint32Array(capacity);
     ratiosRentables = new Float32Array(capacity);
     countRentables = 0;
 
     const batchSize = 160000;
 
+    // Loop
     for (let i = 0; i < MAX_COMB; i++) {
+        // If we hit the safety limit, we stop collecting to safe memory
+        // Ideally we would warn the user.
+        if (countRentables >= MAX_STORED) {
+            // We can't store more. We break early to save the user's browser.
+            // We will send a special "limit reached" status later.
+            break;
+        }
+
         let t = i;
         let lR = 0;
         let lA = 0;
@@ -80,23 +94,13 @@ function doRunRentables({ textReales, textLae, umbral }) {
 
         const ratio = Math.exp(lR - lA);
         if (ratio >= umbral) {
-            if (countRentables >= capacity) {
-                // Resize
-                capacity *= 2;
-                let newIndices = new Uint32Array(capacity);
-                let newRatios = new Float32Array(capacity);
-                newIndices.set(indicesRentables);
-                newRatios.set(ratiosRentables);
-                indicesRentables = newIndices;
-                ratiosRentables = newRatios;
-            }
             indicesRentables[countRentables] = i;
             ratiosRentables[countRentables] = ratio;
             countRentables++;
         }
 
         if (i % batchSize === 0) {
-            self.postMessage({ type: 'PROGRESS', percent: (i / MAX_COMB * 100).toFixed(0), status: `Generando... (${countRentables})` });
+            self.postMessage({ type: 'PROGRESS', percent: (i / MAX_COMB * 100).toFixed(0), status: `Generando... (Max 300k)` });
         }
     }
 
