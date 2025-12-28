@@ -436,7 +436,11 @@
     <script>
         // CORE LOGIC INLINED
         const FILAS = 12; const COLUMNAS = 4; const MAX_COMB = 16777216; const MAP_SIGNOS = ['0', '1', '2', 'M'];
-        let listaRentables = [], reducedCombinations = [], isStopped = false;
+        let indicesRentables = new Uint32Array(0);
+        let ratiosRentables = new Float32Array(0);
+        let countRentables = 0;
+        let reducedCombinations = [], isStopped = false;
+        let currentLogR = null;
 
         const el = id => document.getElementById(id); // Helper
 
@@ -490,11 +494,17 @@
 
             el('btnCalculate').disabled = true;
             el('btnFilter').disabled = true;
-            listaRentables = [];
+
+            // TypedArray Storage
+            let capacity = 500000;
+            indicesRentables = new Uint32Array(capacity);
+            ratiosRentables = new Float32Array(capacity);
+            countRentables = 0;
 
             // Log precalc
             const lR = mR.map(row => row.map(x => Math.log(x)));
             const lA = mA.map(row => row.map(x => Math.log(x)));
+            currentLogR = lR;
 
             updateProgress(0, "Generando...");
             const batch = 100000;
@@ -502,35 +512,82 @@
             for (let i = 0; i < MAX_COMB; i++) {
                 // Async break to keep UI alive
                 if (i % batch === 0) {
-                    updateProgress((i / MAX_COMB * 100).toFixed(0), "Generando...");
+                    updateProgress((i / MAX_COMB * 100).toFixed(0), `Generando... (${countRentables})`);
                     await sleep();
                 }
 
                 let t = i;
                 let logR = 0, logA = 0;
-                let chars = new Array(12);
                 for (let j = FILAS - 1; j >= 0; j--) {
                     let v = t % 4;
-                    chars[j] = MAP_SIGNOS[v];
                     logR += lR[j][v];
                     logA += lA[j][v];
                     t = (t - v) / 4;
                 }
 
-                if (Math.exp(logR - logA) >= umbral) {
-                    listaRentables.push({ c: chars.join(''), lr: logR, la: logA, r: Math.exp(logR - logA) });
+                const ratio = Math.exp(logR - logA);
+                if (ratio >= umbral) {
+                    if (countRentables >= capacity) {
+                        capacity *= 2;
+                        let newI = new Uint32Array(capacity);
+                        let newR = new Float32Array(capacity);
+                        newI.set(indicesRentables); newR.set(ratiosRentables);
+                        indicesRentables = newI; ratiosRentables = newR;
+                    }
+                    indicesRentables[countRentables] = i;
+                    ratiosRentables[countRentables] = ratio;
+                    countRentables++;
                 }
             }
 
             updateProgress(100, "Ordenando...");
             await sleep();
-            listaRentables.sort((a, b) => b.lr - a.lr); // Sort by prob DESC
 
-            el('resBase').textContent = listaRentables.length;
+            // Sort by Probability
+            let sortIndices = new Uint32Array(countRentables);
+            for (let i = 0; i < countRentables; i++) sortIndices[i] = i;
+
+            sortIndices.sort((a, b) => {
+                const probA = calcProbReal(indicesRentables[a]);
+                const probB = calcProbReal(indicesRentables[b]);
+                return probB - probA;
+            });
+
+            // Final sync
+            let finI = new Uint32Array(countRentables);
+            let finR = new Float32Array(countRentables);
+            for (let i = 0; i < countRentables; i++) {
+                finI[i] = indicesRentables[sortIndices[i]];
+                finR[i] = ratiosRentables[sortIndices[i]];
+            }
+            indicesRentables = finI; ratiosRentables = finR;
+
+            el('resBase').textContent = countRentables;
             el('btnCalculate').disabled = false;
             el('btnFilter').disabled = false;
-            updateProgress(100, `Base generada: ${listaRentables.length}`);
-            alert(`Generadas ${listaRentables.length} columnas.`);
+            updateProgress(100, `Base generada: ${countRentables}`);
+            alert(`Generadas ${countRentables} columnas.`);
+        }
+
+        function calcProbReal(idx) {
+            let t = idx, sum = 0;
+            for (let j = FILAS - 1; j >= 0; j--) {
+                let v = t % 4;
+                sum += currentLogR[j][v];
+                t = (t - v) / 4;
+            }
+            return sum;
+        }
+
+        function getCombStr(idx) {
+            let t = idx;
+            let chars = new Array(12);
+            for (let j = FILAS - 1; j >= 0; j--) {
+                let v = t % 4;
+                chars[j] = MAP_SIGNOS[v];
+                t = (t - v) / 4;
+            }
+            return chars.join('');
         }
 
         async function runReduccion() {
@@ -542,37 +599,43 @@
             el('btnStop').classList.remove('hidden');
             el('btnFilter').classList.add('hidden');
 
-            let sel = [];
-            let total = listaRentables.length;
-            let checks = 0;
+            let selIdx = [];
+            let selStrings = [];
+            let total = countRentables;
 
             for (let i = 0; i < total; i++) {
                 if (isStopped) break;
-                if (max > 0 && sel.length >= max) break;
-                if (checks++ % 2000 === 0) {
-                    updateProgress((i / total * 100).toFixed(0), `Reduciendo... (${sel.length})`);
+                if (max > 0 && selIdx.length >= max) break;
+                if (i % 2000 === 0) {
+                    updateProgress((i / total * 100).toFixed(0), `Reduciendo... (${selIdx.length})`);
                     await sleep();
                 }
 
-                const cand = listaRentables[i];
+                const candStr = getCombStr(indicesRentables[i]);
                 let valid = true;
-                for (let s of sel) {
-                    if (calcDist(cand.c, s.c) < dist) { valid = false; break; }
+                for (let s of selStrings) {
+                    if (calcDistStrings(candStr, s) < dist) { valid = false; break; }
                 }
-                if (valid) sel.push(cand);
+                if (valid) {
+                    selIdx.push(i);
+                    selStrings.push(candStr);
+                }
             }
 
-            reducedCombinations = sel;
-            el('resFinal').textContent = sel.length;
+            reducedCombinations = selIdx.map((v, idx) => ({
+                c: selStrings[idx],
+                r: ratiosRentables[v]
+            }));
+
+            el('resFinal').textContent = reducedCombinations.length;
             el('resultsSection').classList.remove('hidden');
             el('btnStop').classList.add('hidden');
             el('btnFilter').classList.remove('hidden');
             updateProgress(100, isStopped ? "Detenido" : "Finalizado");
         }
 
-        function calcDist(a, b) {
+        function calcDistStrings(a, b) {
             let d = 0;
-            // Match based distance (i and i+1)
             for (let i = 0; i < 12; i += 2) {
                 if (a[i] !== b[i] || a[i + 1] !== b[i + 1]) d++;
             }
