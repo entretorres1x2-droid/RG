@@ -1,0 +1,17 @@
+{
+  "name": "RentaGol - Análisis Quinigol",
+  "short_name": "RentaGol",
+  "description": "Análisis de rentabilidad para Quinigol.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#F0F2F5",
+  "theme_color": "#0078D7",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

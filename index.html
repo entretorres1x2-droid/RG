@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RentaGol Web</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0078D7">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Roboto+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- HEADER -->
+        <header>
+            <h1>RENTA<span class="highlight">GOL</span> WEB</h1>
+            <p class="subtitle">Análisis Quinielístico Avanzado</p>
+        </header>
+
+        <!-- 1. API SECTION -->
+        <section class="card api-section">
+            <div class="card-header">
+                <h2>1. Datos (API Losilla)</h2>
+            </div>
+            <div class="card-body">
+                <div class="input-group-row">
+                    <div class="input-wrapper">
+                        <label>Temporada</label>
+                        <input type="number" id="inpSeason" value="2026" min="2020" max="2030">
+                    </div>
+                    <div class="input-wrapper">
+                        <label>Jornada</label>
+                        <input type="number" id="inpRound" value="28" min="1" max="100">
+                    </div>
+                </div>
+                <button id="btnDownload" class="btn-primary">
+                    <span class="icon">⬇️</span> Descargar Datos
+                </button>
+                <div id="apiStatus" class="status-text">Estado: Esperando...</div>
+                <div id="apiDates" class="status-detail">Actualización: -</div>
+            </div>
+        </section>
+
+        <!-- 2. BOLETO VISUALIZER (Collapsible) -->
+        <section class="card boleto-section">
+            <div class="card-header collapse-trigger" onclick="toggleSection('boletoBody')">
+                <h2>2. Boleto <span class="toggle-icon">▼</span></h2>
+            </div>
+            <div class="card-body collapsed" id="boletoBody">
+                <div id="matchGrid" class="match-grid">
+                    <div class="empty-state">Descarga datos para ver los partidos</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. PERCENTAGES EDITORS -->
+        <section class="card editor-section">
+            <div class="card-header">
+                <h2>3. Porcentajes (Raw)</h2>
+            </div>
+            <div class="tabs">
+                <button class="tab-btn active" onclick="openTab('tabReales')">REALES</button>
+                <button class="tab-btn" onclick="openTab('tabLae')">LAE (Apostados)</button>
+            </div>
+            <div class="card-body no-padding">
+                <div id="tabReales" class="tab-content active">
+                    <textarea id="txtReales" placeholder="Pega aquí porcentajes reales..."></textarea>
+                    <div class="tools-bar">
+                        <span id="entropyLabel">Entropía: ---</span>
+                    </div>
+                </div>
+                <div id="tabLae" class="tab-content">
+                    <textarea id="txtLae" placeholder="Pega aquí porcentajes LAE..."></textarea>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. CALCULATE -->
+        <section class="card calc-section">
+            <div class="card-header">
+                <h2>4. Generar Combinaciones</h2>
+            </div>
+            <div class="card-body">
+                <div class="input-group-row">
+                    <div class="input-wrapper">
+                        <label>Coeficiente (Umbral)</label>
+                        <input type="number" id="inpUmbral" value="1.0" step="0.1">
+                    </div>
+                </div>
+                <button id="btnCalculate" class="btn-action pulse-anim" disabled>
+                    CALCULAR RENTABLES
+                </button>
+            </div>
+        </section>
+
+        <!-- 5. REDUCTION -->
+        <section class="card red-section">
+            <div class="card-header">
+                <h2>5. Reducción</h2>
+            </div>
+            <div class="card-body">
+                <div class="input-group-row">
+                    <div class="input-wrapper">
+                        <label>Distancia Min</label>
+                        <select id="selDist">
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3" selected>3</option>
+                            <option value="4">4</option>
+                        </select>
+                    </div>
+                    <div class="input-wrapper">
+                        <label>Max Combs (0=Todas)</label>
+                        <input type="number" id="inpMaxCombs" value="0">
+                    </div>
+                </div>
+                <div id="recommendationLabel" class="status-detail">Recomendación: -</div>
+                <div class="action-row">
+                    <button id="btnFilter" class="btn-secondary" disabled>FILTRAR</button>
+                    <button id="btnStop" class="btn-danger hidden">STOP</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- RESULTS & FLOATING STATUS -->
+        <section class="card results-section hidden" id="resultsSection">
+            <div class="card-header">
+                <h2>Resultados</h2>
+            </div>
+            <div class="card-body">
+                <div class="result-stats">
+                    <div class="stat-box">
+                        <span class="stat-label">Base</span>
+                        <span class="stat-value" id="resBase">0</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-label">Final</span>
+                        <span class="stat-value highlight" id="resFinal">0</span>
+                    </div>
+                </div>
+                <div class="download-btns">
+                    <button onclick="downloadFile('txt')" class="btn-outline">Descargar TXT</button>
+                    <button onclick="downloadFile('csv')" class="btn-outline">Descargar CSV</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Fixed Bottom Status Bar -->
+        <div class="status-bar">
+            <div class="progress-container">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <div class="status-text-row">
+                <span id="mainStatus">Listo</span>
+                <span id="mainPercent">0%</span>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('SW Registered', reg))
+                    .catch(err => console.log('SW Error', err));
+            });
+        }
+    </script>
+</body>
+
+</html>
